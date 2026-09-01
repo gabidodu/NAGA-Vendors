@@ -21,16 +21,6 @@ const vendorColumns = [
 // in the detail panel (contact person, posting group, type) stays read-only display.
 const EDITABLE_FIELDS = ['phoneNo', 'email', 'website', 'city', 'countryRegion', 'address', 'taxRegistrationNo', 'status']
 
-const FIELD_LABELS = {
-  phoneNo: 'Phone',
-  email: 'Email',
-  website: 'Website',
-  city: 'City',
-  countryRegion: 'Country',
-  address: 'Address',
-  taxRegistrationNo: 'Tax No.',
-}
-
 // The BC "blocked" enum only has these three values — a dropdown, not free text.
 const STATUS_OPTIONS = ['Active', 'Blocked (Payment)', 'Blocked (All)']
 
@@ -142,7 +132,6 @@ function App() {
   const [files, setFiles] = useState([])
   const [filesLoading, setFilesLoading] = useState(false)
   const [uploadState, setUploadState] = useState({ status: 'idle', message: '' })
-  const [suggestions, setSuggestions] = useState(null)
 
   const vendorFilesQuery = useMemo(() => {
     if (!selectedVendor || !selectedEnvironment || !selectedCompany) return null
@@ -151,7 +140,6 @@ function App() {
 
   useEffect(() => {
     setUploadState({ status: 'idle', message: '' })
-    setSuggestions(null)
     if (!vendorFilesQuery) {
       setFiles([])
       return
@@ -183,7 +171,6 @@ function App() {
     if (!file || !selectedVendor || !vendorFilesQuery) return
 
     setUploadState({ status: 'uploading', message: '' })
-    setSuggestions(null)
     try {
       const url = `/api/vendors/${encodeURIComponent(selectedVendor.id)}/files?${vendorFilesQuery}&filename=${encodeURIComponent(file.name)}`
       const response = await apiFetch(url, {
@@ -197,34 +184,9 @@ function App() {
       }
       setFiles((prev) => [payload.item, ...prev])
       setUploadState({ status: 'idle', message: '' })
-      if (payload.suggestedFields && Object.keys(payload.suggestedFields).length > 0) {
-        setSuggestions({ filename: file.name, fields: payload.suggestedFields })
-      }
     } catch (error) {
       setUploadState({ status: 'error', message: error.message })
     }
-  }
-
-  const handleAcceptSuggestion = (key) => {
-    if (!suggestions) return
-    handleFieldChange(key, suggestions.fields[key])
-    setSuggestions((prev) => {
-      if (!prev) return prev
-      const rest = Object.fromEntries(Object.entries(prev.fields).filter(([field]) => field !== key))
-      return Object.keys(rest).length > 0 ? { ...prev, fields: rest } : null
-    })
-  }
-
-  const handleAcceptAllSuggestions = () => {
-    if (!suggestions) return
-    for (const [key, value] of Object.entries(suggestions.fields)) {
-      handleFieldChange(key, value)
-    }
-    setSuggestions(null)
-  }
-
-  const handleDismissSuggestions = () => {
-    setSuggestions(null)
   }
 
   const handleDeleteFile = async (fileId) => {
@@ -610,37 +572,6 @@ function App() {
 
                 {uploadState.status === 'error' && (
                   <div className="saveBanner saveBanner-error">{uploadState.message}</div>
-                )}
-
-                {suggestions && (
-                  <div className="suggestionsPanel">
-                    <div className="suggestionsPanelHeader">
-                      <span>Sugestii extrase din „{suggestions.filename}”</span>
-                      <div className="suggestionsPanelActions">
-                        <button type="button" className="ghostButton" onClick={handleAcceptAllSuggestions}>
-                          Accept all
-                        </button>
-                        <button type="button" className="ghostButton" onClick={handleDismissSuggestions}>
-                          Dismiss
-                        </button>
-                      </div>
-                    </div>
-                    <dl className="suggestionsList">
-                      {Object.entries(suggestions.fields).map(([key, value]) => (
-                        <div key={key} className="suggestionRow">
-                          <dt>{FIELD_LABELS[key] ?? key}</dt>
-                          <dd>
-                            <span className="suggestionCurrent">{draft[key] ? draft[key] : '(empty)'}</span>
-                            <span className="suggestionArrow">→</span>
-                            <span className="suggestionExtracted">{value}</span>
-                            <button type="button" className="ghostButton" onClick={() => handleAcceptSuggestion(key)}>
-                              Accept
-                            </button>
-                          </dd>
-                        </div>
-                      ))}
-                    </dl>
-                  </div>
                 )}
 
                 {filesLoading ? (
