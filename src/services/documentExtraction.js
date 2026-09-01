@@ -5,6 +5,8 @@
 // project's Windows-build -> Linux-Azure zip-deploy pipeline. They upload normally, just without suggestions.
 
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+import './domMatrixPolyfill.js'
 import { PDFParse } from 'pdf-parse'
 import { createWorker } from 'tesseract.js'
 
@@ -12,10 +14,29 @@ const MIN_PDF_TEXT_LENGTH = 20
 const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp'])
 const IMAGE_CONTENT_TYPES = new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/webp'])
 
+// A crafted upload (pathological PDF structure, or an image that's pathologically slow to OCR)
+// shouldn't be able to hang the request indefinitely — bound how long recognition may run.
+const EXTRACTION_TIMEOUT_MS = 15_000
+
+function withTimeout(promise, ms) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error(`Extraction timed out after ${ms}ms`)), ms)),
+  ])
+}
+
+// Vendored locally (not fetched from a CDN at runtime) so OCR never depends on a live
+// third-party network call in production — see README/PROJECT_DOCUMENTATION for why.
+const TESSDATA_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)), 'tessdata')
+
 let ocrWorkerPromise = null
 function getOcrWorker() {
   if (!ocrWorkerPromise) {
-    ocrWorkerPromise = createWorker('eng+ron')
+    ocrWorkerPromise = createWorker('eng+ron', undefined, {
+      langPath: TESSDATA_PATH,
+      gzip: false,
+      cacheMethod: 'none',
+    })
   }
   return ocrWorkerPromise
 }
@@ -34,7 +55,7 @@ export async function extractText(buffer, contentType, filename) {
     let parser
     try {
       parser = new PDFParse({ data: buffer })
-      const { text } = await parser.getText()
+      const { text } = await withTimeout(parser.getText(), EXTRACTION_TIMEOUT_MS)
       if (text && text.trim().length >= MIN_PDF_TEXT_LENGTH) return text
     } catch (error) {
       console.error('pdf-parse failed', error)
@@ -47,7 +68,7 @@ export async function extractText(buffer, contentType, filename) {
   if (isImage(contentType, filename)) {
     try {
       const worker = await getOcrWorker()
-      const { data } = await worker.recognize(buffer)
+      const { data } = await withTimeout(worker.recognize(buffer), EXTRACTION_TIMEOUT_MS)
       return data.text || ''
     } catch (error) {
       console.error('tesseract.js OCR failed', error)

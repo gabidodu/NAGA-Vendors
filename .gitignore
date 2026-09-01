@@ -12,8 +12,10 @@ dist
 dist-ssr
 *.local
 
-# tesseract.js OCR language data — downloaded at runtime on first use, not source
+# tesseract.js OCR language data — vendored copies under src/services/tessdata/ are
+# committed intentionally (see documentExtraction.js); ignore any other stray copy
 *.traineddata
+!src/services/tessdata/*.traineddata
 
 # Secrets — never commit these
 .env
