@@ -66,6 +66,8 @@ Remove-Item $staging -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Path $staging | Out-Null
 Copy-Item server.js, package.json, package-lock.json -Destination $staging
 Copy-Item dist -Destination $staging -Recurse
+New-Item -ItemType Directory -Path "$staging\src" | Out-Null
+Copy-Item src\services -Destination "$staging\src\services" -Recurse   # server.js imports this at runtime — don't skip it
 cd $staging
 npm install --omit=dev
 cd -

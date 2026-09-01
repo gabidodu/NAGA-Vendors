@@ -1,6 +1,6 @@
 # Naga Vendors – Project Documentation
 
-_Last updated: 2026-08-14_
+_Last updated: 2026-09-01_
 
 ## 1. Overview
 
@@ -129,7 +129,7 @@ First attempt used Azure App Service "Easy Auth" (classic redirect-to-login). It
 ## 11. Known limitations / things not built
 
 - No automated tests
-- No CI/CD — deploys are manual (`npm run build` → zip → `az webapp deploy`)
+- No CI/CD — deploys are manual (`npm run build` → zip → `az webapp deploy`); version control exists (GitHub: [gabidodu/NAGA-Vendors](https://github.com/gabidodu/NAGA-Vendors), added 2026-09-01) but pushing does not trigger a deploy
 - No Key Vault — certificate and secrets live in App Service settings
 - Editable field set is deliberately narrow (§5); anything not listed either doesn't exist in the BC API or isn't writable
 - Contact Person cannot be reassigned through this app or any standard BC API call — would require a custom BC AL extension
@@ -142,3 +142,19 @@ First attempt used Azure App Service "Easy Auth" (classic redirect-to-login). It
 3. Upgrade the App Service plan from F1 to B1+ before any real usage load
 4. Set up CI/CD (GitHub Actions or Azure DevOps) instead of manual zip deploys
 5. If per-user BC permissions ever matter, revisit the auth model — app-only access can't express that today
+
+## 13. Session log — 2026-09-01
+
+**Goal for the session:** add OCR-based field pre-fill after a vendor document upload — recognize text, propose matching values for the editable fields, let the user accept/reject per field, never overwrite existing data automatically. Ended in a revert; logged here so the attempt (and why it didn't work) isn't lost.
+
+**Version control introduced.** The project had no git history before this session. Initialized a local repo, committed the pre-session state as a baseline (`6b56610`), then pushed to a new GitHub repo: [gabidodu/NAGA-Vendors](https://github.com/gabidodu/NAGA-Vendors). All work below is on `master` as a linear commit history.
+
+**OCR feature built, then reverted.**
+- Approach (chosen for zero ongoing cost, no cloud OCR service): `pdf-parse` reads the text layer of digital PDFs; `tesseract.js` OCRs plain images (jpg/png/webp); a scanned PDF with no text layer was an accepted v1 gap (rasterizing it would need a native-binary dependency — see the deploy bug below for exactly why that's risky here). A generic regex library over RO/EN labels (CUI/Cod fiscal, Tel, Adresă, Oraș, Țara, email, website) mapped recognized text onto the app's editable vendor fields. Recognition was scoped to only run on a vendor's *first* uploaded file (checked server-side against the actual SharePoint folder contents).
+- **Deploy-breaking bug found and fixed:** `pdf-parse`'s `pdfjs-dist` dependency needs a global `DOMMatrix` (used internally even for plain text extraction) and tries to get one from an optional native binding, `@napi-rs/canvas`. This project builds on Windows and zip-deploys straight to Linux Azure with no server-side `npm install` (see §7) — so the Linux-native binary for that package is never present, and the app **crashed at import time** on every deploy (`ReferenceError: DOMMatrix is not defined`), even though it worked fine locally (where the Windows-native binary was available, masking the issue). Fixed with a pure-JS `DOMMatrix` polyfill (the `dommatrix` package, zero dependencies) loaded before `pdf-parse` — verified by disabling the native binding locally to reproduce the Linux failure, and by a smoke-test run from the actual staged deploy folder before shipping. Also hit and fixed an unrelated `pdf-parse` v2 API surprise: the package switched from a default export function (older docs/examples) to a `PDFParse` class (`new PDFParse({ data }).getText()`).
+- **Security audit performed** (prompted by "does using public OCR libraries introduce risk, and can this app be reached from outside"): `npm audit` clean for the new dependencies; only one install-time script across all of them (`tesseract.js`'s standard, harmless funding-message postinstall — verified by reading it). Added a 15s timeout around extraction so a crafted upload can't hang a request. Vendored the OCR language data (`eng`/`ron` `.traineddata`) into the repo instead of fetching it from a public CDN at runtime. Checked live Azure config directly (not just assumed from docs): confirmed Easy Auth is fully off (no leftover from the abandoned attempt in §9), and found `httpsOnly` was `false` — fixed to `true` (kept after the revert, since it's an unrelated hardening fix). Conclusion on "no external access": not achievable while this stays a Teams personal tab — Teams clients connect from each user's own network, not a lockable Microsoft IP range — so the real access boundary is, and remains, the per-request Entra ID bearer-token check (§3), not network isolation.
+- **Reverted:** tested against real vendor documents in production — the generic v1 regex patterns didn't recognize their actual labels/layout, so the feature wasn't adding value as built. Reverted to the pre-session baseline via a new commit (`08f2631`) rather than force-rewriting history — the full implementation and both fixes above are still in the git log (`cb3468d`..`793b1f2`) if this is revisited with real sample documents to design the patterns against.
+
+**Incidental fix, unrelated to OCR:** the deploy steps in [README.md](README.md#deploying-to-azure) never copied `src/services/` into the staging folder — but `server.js` has always imported `./src/services/sharepoint.js` (the SharePoint file-storage integration), so a deploy following the README literally would have been missing that module. Not previously hit because past manual deploys apparently included it by hand without updating the doc. Fixed in this session (see README).
+
+**Net effect on production:** functionally unchanged from before the session, except `httpsOnly` is now enforced and the project has git history + a GitHub remote going forward.
