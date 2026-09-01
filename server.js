@@ -636,13 +636,18 @@ app.post('/api/vendors/:id/files', express.raw({ type: '*/*', limit: '5mb' }), a
 
   try {
     const token = await getGraphAccessToken()
+    const existingFiles = await listVendorFiles(token, folderPath)
     const item = await uploadVendorFile(token, folderPath, filename, buffer, req.headers['content-type'])
 
+    // Recognition only runs for a vendor's very first uploaded file — checked server-side
+    // against the actual folder contents, not client-supplied state.
     let suggestedFields = {}
-    try {
-      suggestedFields = await extractVendorFieldsFromDocument(buffer, req.headers['content-type'], filename)
-    } catch (error) {
-      console.error('Document field extraction failed', error)
+    if (existingFiles.length === 0) {
+      try {
+        suggestedFields = await extractVendorFieldsFromDocument(buffer, req.headers['content-type'], filename)
+      } catch (error) {
+        console.error('Document field extraction failed', error)
+      }
     }
 
     res.json({ success: true, item, suggestedFields })
