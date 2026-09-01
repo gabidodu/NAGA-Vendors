@@ -1,0 +1,40 @@
+{
+  "$schema": "https://developer.microsoft.com/en-us/json-schemas/teams/v1.16/MicrosoftTeams.schema.json",
+  "manifestVersion": "1.16",
+  "version": "1.0.1",
+  "id": "1df8a904-6dd6-4d60-8dea-45900f7e750e",
+  "packageName": "com.naga.vendorsdirectory",
+  "developer": {
+    "name": "Naga",
+    "websiteUrl": "https://naga-vendors.azurewebsites.net",
+    "privacyUrl": "https://naga-vendors.azurewebsites.net",
+    "termsOfUseUrl": "https://naga-vendors.azurewebsites.net"
+  },
+  "name": {
+    "short": "Naga Vendors",
+    "full": "Naga Vendors Directory"
+  },
+  "description": {
+    "short": "Business Central vendor directory",
+    "full": "Browse and search Business Central vendors across Naga environments and companies directly inside Teams."
+  },
+  "icons": {
+    "color": "color.png",
+    "outline": "outline.png"
+  },
+  "accentColor": "#2D4AE3",
+  "staticTabs": [
+    {
+      "entityId": "naga-vendors-home",
+      "name": "Vendors",
+      "contentUrl": "https://naga-vendors.azurewebsites.net/",
+      "websiteUrl": "https://naga-vendors.azurewebsites.net/",
+      "scopes": ["personal"]
+    }
+  ],
+  "validDomains": ["naga-vendors.azurewebsites.net"],
+  "webApplicationInfo": {
+    "id": "85bca5eb-7bf7-4dbc-b65a-87d32db793e1",
+    "resource": "api://naga-vendors.azurewebsites.net/85bca5eb-7bf7-4dbc-b65a-87d32db793e1"
+  }
+}
