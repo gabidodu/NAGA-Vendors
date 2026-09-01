@@ -15,6 +15,7 @@ import {
   deleteVendorFile,
   getVendorFileDownloadUrl,
 } from './src/services/sharepoint.js'
+import { extractVendorFieldsFromDocument } from './src/services/documentExtraction.js'
 
 dotenv.config()
 
@@ -636,7 +637,15 @@ app.post('/api/vendors/:id/files', express.raw({ type: '*/*', limit: '5mb' }), a
   try {
     const token = await getGraphAccessToken()
     const item = await uploadVendorFile(token, folderPath, filename, buffer, req.headers['content-type'])
-    res.json({ success: true, item })
+
+    let suggestedFields = {}
+    try {
+      suggestedFields = await extractVendorFieldsFromDocument(buffer, req.headers['content-type'], filename)
+    } catch (error) {
+      console.error('Document field extraction failed', error)
+    }
+
+    res.json({ success: true, item, suggestedFields })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error'
     res.status(500).json({ success: false, message })
