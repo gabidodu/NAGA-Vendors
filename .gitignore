@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# tesseract.js OCR language data — downloaded at runtime on first use, not source
+*.traineddata
+
 # Secrets — never commit these
 .env
 .env.*

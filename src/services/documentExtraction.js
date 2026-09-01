@@ -5,7 +5,7 @@
 // project's Windows-build -> Linux-Azure zip-deploy pipeline. They upload normally, just without suggestions.
 
 import path from 'node:path'
-import pdfParse from 'pdf-parse'
+import { PDFParse } from 'pdf-parse'
 import { createWorker } from 'tesseract.js'
 
 const MIN_PDF_TEXT_LENGTH = 20
@@ -31,11 +31,15 @@ function isImage(contentType, filename) {
 
 export async function extractText(buffer, contentType, filename) {
   if (isPdf(contentType, filename)) {
+    let parser
     try {
-      const { text } = await pdfParse(buffer)
+      parser = new PDFParse({ data: buffer })
+      const { text } = await parser.getText()
       if (text && text.trim().length >= MIN_PDF_TEXT_LENGTH) return text
     } catch (error) {
       console.error('pdf-parse failed', error)
+    } finally {
+      await parser?.destroy()
     }
     return ''
   }
