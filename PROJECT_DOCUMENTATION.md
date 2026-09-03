@@ -102,8 +102,7 @@ The prototype (see git history / earlier version of this doc) had several bugs t
 - **Deploy method**: no local Docker involved — GitHub Actions builds the image (Dockerfile at repo root, multi-stage: `npm run build` then a slim runtime with only `server.js`, `src/services/`, `dist/`, prod deps), pushes to GHCR, then a manual `az containerapp update --image ...` promotes it. No staging/zip step like the old App Service flow.
 - **Secrets**: `BC_CERT_PEM` and the rest of the app settings live as Container Apps secrets/env vars (ported 1:1 from the old Web App's App Settings at migration time), never baked into the Docker image — `.dockerignore` excludes all local cert files and `.env`. Still no Key Vault; that's unchanged from before.
 - **SSO identity is hostname-bound** — the Entra App Registration's "Expose an API" App ID URI (`api://naga-vendors-ca.braveground-e06101b4.westeurope.azurecontainerapps.io/85bca5eb-7bf7-4dbc-b65a-87d32db793e1`), the audience `server.js` validates, and the Teams manifest (`webApplicationInfo.resource`, `validDomains`, `contentUrl`/`websiteUrl`) all have to agree on the exact same hostname. If the Container App is ever recreated (new environment, different region), all three need updating together, in the same sitting, or Teams SSO breaks.
-- **Legacy App Service** (`naga-vendors` Web App on `asp-naga-vendors`, F1) is being kept running, untouched, as a rollback path until the Container Apps hosting is confirmed stable for all users — not yet decommissioned. See §12.
-- SCM/Kudu basic-auth publishing credentials on the old Web App are disabled by default (Azure default); they were only turned on briefly, twice, to inspect deployed files, then turned back off immediately both times. Not relevant to the new Container Apps hosting (no Kudu/SCM there).
+- **Legacy App Service** (`naga-vendors` Web App on `asp-naga-vendors`, F1) was decommissioned on 2026-09-03 once the Container Apps hosting was confirmed working end-to-end (Teams SSO, BC calls) — both resources deleted. No more App Service in this project.
 
 ## 8. Security model — read this before adding more users
 
@@ -137,11 +136,11 @@ First attempt used Azure App Service "Easy Auth" (classic redirect-to-login). It
 
 ## 12. Next steps (not yet done, ordered by likely priority)
 
-1. Confirm the Container Apps hosting is stable in real Teams usage (end-to-end SSO, BC calls) for all current users, then delete the old `naga-vendors` Web App and `asp-naga-vendors` plan — they're kept running only as a rollback path (see §7)
-2. Decide on and enforce a distribution boundary for the Teams app (see §8)
-3. Move `BC_CERT_PEM` and other secrets to Azure Key Vault with a managed identity
-4. If per-user BC permissions ever matter, revisit the auth model — app-only access can't express that today
-5. Watch actual Container Apps Consumption cost in Azure Cost Management for a couple of weeks to confirm it stays within the free monthly grant at real traffic
+1. Decide on and enforce a distribution boundary for the Teams app (see §8)
+2. Move `BC_CERT_PEM` and other secrets to Azure Key Vault with a managed identity
+3. If per-user BC permissions ever matter, revisit the auth model — app-only access can't express that today
+4. Watch actual Container Apps Consumption cost in Azure Cost Management for a couple of weeks to confirm it stays within the free monthly grant at real traffic
+5. Address the two moderate `npm audit` findings (`qs`, transitively via `uuid`/`@azure/msal-node`) — not urgent, unrelated to the 2026-09-03 dotenv incident, but worth a routine dependency bump
 
 ## 13. Session log — 2026-09-01
 
@@ -158,3 +157,18 @@ First attempt used Azure App Service "Easy Auth" (classic redirect-to-login). It
 **Incidental fix, unrelated to OCR:** the deploy steps in [README.md](README.md#deploying-to-azure) never copied `src/services/` into the staging folder — but `server.js` has always imported `./src/services/sharepoint.js` (the SharePoint file-storage integration), so a deploy following the README literally would have been missing that module. Not previously hit because past manual deploys apparently included it by hand without updating the doc. Fixed in this session (see README).
 
 **Net effect on production:** functionally unchanged from before the session, except `httpsOnly` is now enforced and the project has git history + a GitHub remote going forward.
+
+## 14. Session log — 2026-09-03
+
+**Goal for the session:** move hosting off App Service F1 to Azure Container Apps (Consumption), to avoid the fixed ~13 EUR/month cost of the B1 upgrade the docs had been flagging (§7, old TODO #3). Ended with the migration fully complete *and* an unrelated production security incident found and fixed along the way.
+
+**Migration completed.** Dockerized the app (`Dockerfile`, multi-stage), added `.github/workflows/docker-publish.yml` (GitHub Actions builds and pushes to `ghcr.io/gabidodu/naga-vendors` — public package, no pull credentials needed), provisioned `cae-naga-vendors` / `naga-vendors-ca` in `Assetmanagement-RG`. Discovered mid-migration that Teams SSO's resource identity (`server.js` audience check, Entra App ID URI, Teams manifest `webApplicationInfo`/`validDomains`) is hostname-bound — had to cut over all three together to the new `*.azurecontainerapps.io` hostname in one sitting. Confirmed the app is distributed via the tenant's Teams app catalog (Teams Admin Center), not personal sideloading as §10 previously (incorrectly) said — a manifest update there propagates to already-installed tabs without users reinstalling anything, once the client picks up the new app definition (a full Teams restart was needed to force that in testing). Old `naga-vendors` Web App and `asp-naga-vendors` plan deleted 2026-09-03 after confirming the new hosting end-to-end in a real Teams client.
+
+**Unrelated security incident found via container logs, fixed in the same session.** Right after first deploying to Container Apps, the container's startup logs showed a suspicious line from `dotenv` (`^17.0.0` at the time) referencing an unfamiliar domain and phrasing aimed at AI coding agents. Confirmed via web search this is a disclosed 2025-09 supply-chain compromise of `dotenv` 17.x (a `SKILL.md`-based payload in `node_modules` trying to bait AI agents into exfiltrating secrets). Since `dotenv.config()` runs right where `BC_CERT_PEM` and the rest of the BC credentials are loaded from the environment, and this had been running on the old (still-live at the time) App Service since it was created, the certificate had to be treated as compromised:
+- Rotated the BC client certificate: new self-signed cert generated locally (`gen-cert-v2.ps1`, mirrors the original `gen-cert.ps1`), public key added to the Entra App Registration (`85bca5eb-...`) as an additional credential, `BC_CERT_PEM`/`BC_CERT_THUMBPRINT` updated on both apps, new cert verified independently (a standalone client-credentials token request, outside the app itself), **then the old, exposed credential deleted from Entra**. No Business Central-side change needed — BC's "Microsoft Entra ID Applications" page only references the Client ID, not the certificate.
+- Pinned `dotenv` to `16.6.1` (exact, no `^`) — the last release before 17.x and before the "tips" feature that carried the payload existed at all.
+- Left two unrelated, pre-existing moderate `npm audit` findings (`qs`, `uuid` via `@azure/msal-node`) alone — ordinary CVEs, not part of this incident, tracked in §12 instead.
+
+**Deploy-tooling snag hit along the way:** the `az containerapp` CLI extension failed to install at its latest version on this workstation (pip tried to build `cryptography` from source and failed — this machine's Azure CLI runs on a 32-bit Python missing `_ctypes`); pinning to extension version `0.3.38` installed cleanly. Separately, `az containerapp update --set-env-vars` on that extension version silently replaced the *entire* environment variable list instead of merging (observed as `BC_USE_REAL` reading as unset after what was meant to be a single-variable thumbprint update) — worked around by writing the full desired env var list to a YAML file and applying it via `az containerapp update --yaml`, which also sidesteps a separate Windows-only footgun (`|`/`(`/`)` in `BC_ENVIRONMENTS`'s value getting mangled when passed as `.cmd`-wrapped CLI arguments through `cmd.exe`).
+
+**Net effect on production:** hosting moved to Container Apps (Consumption, scales to zero, no fixed monthly cost), BC certificate rotated, `dotenv` supply-chain exposure closed, old App Service fully decommissioned.
