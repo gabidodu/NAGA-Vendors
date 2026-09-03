@@ -1,0 +1,41 @@
+name: Build and publish container image
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - Dockerfile
+      - server.js
+      - package.json
+      - package-lock.json
+      - "src/**"
+      - index.html
+      - vite.config.js
+      - .github/workflows/docker-publish.yml
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/gabidodu/naga-vendors:latest
+            ghcr.io/gabidodu/naga-vendors:${{ github.sha }}
