@@ -37,7 +37,7 @@ app.use(express.json())
 // depends on Teams client internals we don't control.
 const teamsSsoAudiences = [
   process.env.BC_CLIENT_ID,
-  `api://naga-vendors.azurewebsites.net/${process.env.BC_CLIENT_ID}`,
+  `api://naga-vendors-ca.braveground-e06101b4.westeurope.azurecontainerapps.io/${process.env.BC_CLIENT_ID}`,
 ]
 const teamsSsoIssuers = [
   `https://login.microsoftonline.com/${process.env.BC_TENANT_ID}/`,

@@ -1,14 +1,14 @@
 {
   "$schema": "https://developer.microsoft.com/en-us/json-schemas/teams/v1.16/MicrosoftTeams.schema.json",
   "manifestVersion": "1.16",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "id": "1df8a904-6dd6-4d60-8dea-45900f7e750e",
   "packageName": "com.naga.vendorsdirectory",
   "developer": {
     "name": "Naga",
-    "websiteUrl": "https://naga-vendors.azurewebsites.net",
-    "privacyUrl": "https://naga-vendors.azurewebsites.net",
-    "termsOfUseUrl": "https://naga-vendors.azurewebsites.net"
+    "websiteUrl": "https://naga-vendors-ca.braveground-e06101b4.westeurope.azurecontainerapps.io",
+    "privacyUrl": "https://naga-vendors-ca.braveground-e06101b4.westeurope.azurecontainerapps.io",
+    "termsOfUseUrl": "https://naga-vendors-ca.braveground-e06101b4.westeurope.azurecontainerapps.io"
   },
   "name": {
     "short": "Naga Vendors",
@@ -27,14 +27,14 @@
     {
       "entityId": "naga-vendors-home",
       "name": "Vendors",
-      "contentUrl": "https://naga-vendors.azurewebsites.net/",
-      "websiteUrl": "https://naga-vendors.azurewebsites.net/",
+      "contentUrl": "https://naga-vendors-ca.braveground-e06101b4.westeurope.azurecontainerapps.io/",
+      "websiteUrl": "https://naga-vendors-ca.braveground-e06101b4.westeurope.azurecontainerapps.io/",
       "scopes": ["personal"]
     }
   ],
-  "validDomains": ["naga-vendors.azurewebsites.net"],
+  "validDomains": ["naga-vendors-ca.braveground-e06101b4.westeurope.azurecontainerapps.io"],
   "webApplicationInfo": {
     "id": "85bca5eb-7bf7-4dbc-b65a-87d32db793e1",
-    "resource": "api://naga-vendors.azurewebsites.net/85bca5eb-7bf7-4dbc-b65a-87d32db793e1"
+    "resource": "api://naga-vendors-ca.braveground-e06101b4.westeurope.azurecontainerapps.io/85bca5eb-7bf7-4dbc-b65a-87d32db793e1"
   }
 }
