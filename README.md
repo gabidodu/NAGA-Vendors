@@ -1,6 +1,6 @@
 # Naga Vendors
 
-A Business Central vendor directory running as a Microsoft Teams tab. Live at **https://naga-vendors.azurewebsites.net**, hosted on Azure App Service in the Naga tenant. See [PROJECT_DOCUMENTATION.md](PROJECT_DOCUMENTATION.md) for the full architecture, security model, and history of fixes — this file only covers running and deploying it.
+A Business Central vendor directory running as a Microsoft Teams tab. Live at **https://naga-vendors-ca.braveground-e06101b4.westeurope.azurecontainerapps.io**, hosted on Azure Container Apps (Consumption plan) in the Naga tenant. See [PROJECT_DOCUMENTATION.md](PROJECT_DOCUMENTATION.md) for the full architecture, security model, and history of fixes — this file only covers running and deploying it.
 
 ## What it does
 
@@ -55,35 +55,24 @@ Users don't log in separately — Teams silently gets them a token, which the ba
 
 ## Deploying to Azure
 
-No CI/CD yet — manual deploy from a dev machine:
+Push to `master` (touching app code) → GitHub Actions builds the Docker image and pushes it to `ghcr.io/gabidodu/naga-vendors` — see `.github/workflows/docker-publish.yml`. That alone does **not** update the running app; promote it explicitly once the build finishes:
 
 ```powershell
-npm run build
+git push origin master
+# wait for the "Build and publish container image" run to go green on GitHub, then note its commit SHA
 
-# Stage a clean production-only copy (fresh folder, avoids shipping devDependencies)
-$staging = "$env:TEMP\naga-deploy"
-Remove-Item $staging -Recurse -Force -ErrorAction SilentlyContinue
-New-Item -ItemType Directory -Path $staging | Out-Null
-Copy-Item server.js, package.json, package-lock.json -Destination $staging
-Copy-Item dist -Destination $staging -Recurse
-New-Item -ItemType Directory -Path "$staging\src" | Out-Null
-Copy-Item src\services -Destination "$staging\src\services" -Recurse   # server.js imports this at runtime — don't skip it
-cd $staging
-npm install --omit=dev
-cd -
-
-$zip = "$env:TEMP\naga-deploy.zip"
-Compress-Archive -Path "$staging\*" -DestinationPath $zip -Force
-az webapp deploy --resource-group NagaVendors-RG --name naga-vendors --src-path $zip --type zip
+az containerapp update `
+  --name naga-vendors-ca --resource-group Assetmanagement-RG `
+  --image ghcr.io/gabidodu/naga-vendors:<commit-sha>
 ```
 
-If only `server.js` changed (no frontend rebuild needed), skip the `npm run build` and just re-copy `server.js` into the staging folder before re-zipping — no need to reinstall `node_modules` again either.
+Pin to the exact commit SHA tag, not `:latest` — makes it obvious which commit is live and avoids silently picking up an in-flight build. No local Docker install is required for this flow; the build happens entirely on GitHub's runners.
 
-Azure resources: resource group `NagaVendors-RG`, App Service Plan `asp-naga-vendors` (Linux, F1 free tier — upgrade before real load), Web App `naga-vendors`, all in the Naga tenant's "Business Apps" subscription, West Europe.
+Azure resources: resource group `Assetmanagement-RG`, Container Apps environment `cae-naga-vendors`, Container App `naga-vendors-ca` (Consumption plan, scales to zero), all in the Naga tenant's "Business Apps" subscription, West Europe. See [PROJECT_DOCUMENTATION.md §7](PROJECT_DOCUMENTATION.md#7-azure-hosting) for the full picture, including the still-running legacy App Service kept as a rollback path.
 
 ## Teams app package
 
-`teams-app/naga-vendors-teams-app.zip` (manifest + icons) — sideload via Teams → Apps → Manage your apps → Upload a custom app. Currently personal-scope only, not published to the org catalog. Rebuild the zip after any manifest change:
+`teams-app/naga-vendors-teams-app.zip` (manifest + icons) — published to the tenant's Teams app catalog via Teams Admin Center → Teams apps → Manage apps → find "Naga Vendors" → Update. Bump `version` in `manifest.json` on every change that goes through this path, or Teams may not treat it as an update. Rebuild the zip after any manifest change:
 
 ```powershell
 Compress-Archive -Path teams-app\manifest.json, teams-app\color.png, teams-app\outline.png -DestinationPath teams-app\naga-vendors-teams-app.zip -Force

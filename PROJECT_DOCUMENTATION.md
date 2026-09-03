@@ -96,12 +96,14 @@ The prototype (see git history / earlier version of this doc) had several bugs t
 
 - **Tenant**: Naga (`a0428cb6-fed4-4ff3-b12f-0dc16e3cdfe8`) — note this is a *different* tenant from the one this workstation's Azure CLI originally logged into (itassist.eu); a separate device-code/interactive login was required to reach the "Business Apps" subscription that lives in Naga's tenant
 - **Subscription**: Business Apps (`f378dcfa-4494-47eb-91bb-e8546bfe040a`)
-- **Resource group**: `NagaVendors-RG` (West Europe)
-- **App Service Plan**: `asp-naga-vendors`, Linux, **F1 (Free tier)** — deliberately chosen for zero cost during development; upgrade to B1 (~13 EUR/month) before real production load (F1 has a 60 CPU-minute/day cap and no "Always On")
-- **Web App**: `naga-vendors` → https://naga-vendors.azurewebsites.net, Node 22-lts
-- **Deploy method**: local build (`npm run build`) + `npm install --omit=dev` in a clean staging folder + zip deploy (`az webapp deploy --type zip`) — `SCM_DO_BUILD_DURING_DEPLOYMENT=false`, since Oryx build on the free tier is unreliable/slow. No CI/CD pipeline yet; every deploy so far has been run manually from this workstation
-- **Secrets**: the certificate private key is stored as the `BC_CERT_PEM` app setting (raw PEM content), not as a file — the code checks `BC_CERT_PEM` first and only falls back to a local `BC_CERT_PATH` file for local dev. App settings are visible to anyone with Contributor+ access to the resource; a Key Vault reference would be the next hardening step if that's a concern
-- SCM/Kudu basic-auth publishing credentials are disabled by default on this app (Azure default); they were only turned on briefly, twice, to inspect deployed files, then turned back off immediately both times
+- **Resource group**: `Assetmanagement-RG` (West Europe) — despite the app's name, it does **not** live in a `NagaVendors-RG`; verify resource group names against live `az` output before trusting docs, this one drifted before
+- **Hosting (current, since 2026-09-03)**: Azure Container Apps, Consumption plan — `naga-vendors-ca` in the `cae-naga-vendors` environment (`law-naga-vendors` Log Analytics workspace backs it), reachable at https://naga-vendors-ca.braveground-e06101b4.westeurope.azurecontainerapps.io. `minReplicas: 0` / `maxReplicas: 1` — scales to zero when idle, no fixed monthly cost (stays within the Consumption plan's free monthly grant at this traffic level). Migrated off App Service F1 specifically to avoid the fixed ~13 EUR/month cost of upgrading to B1, which F1's 60 CPU-minute/day cap and lack of "Always On" would otherwise have forced.
+- **Image**: built and pushed automatically by `.github/workflows/docker-publish.yml` to `ghcr.io/gabidodu/naga-vendors` (public package, no pull credentials needed) on every push to `master` that touches app code, or via manual `workflow_dispatch`. Container App is pinned to a specific commit-SHA tag, not `:latest` — after a push, wait for the Actions run to finish, then `az containerapp update --name naga-vendors-ca --resource-group Assetmanagement-RG --image ghcr.io/gabidodu/naga-vendors:<commit-sha>` to roll out.
+- **Deploy method**: no local Docker involved — GitHub Actions builds the image (Dockerfile at repo root, multi-stage: `npm run build` then a slim runtime with only `server.js`, `src/services/`, `dist/`, prod deps), pushes to GHCR, then a manual `az containerapp update --image ...` promotes it. No staging/zip step like the old App Service flow.
+- **Secrets**: `BC_CERT_PEM` and the rest of the app settings live as Container Apps secrets/env vars (ported 1:1 from the old Web App's App Settings at migration time), never baked into the Docker image — `.dockerignore` excludes all local cert files and `.env`. Still no Key Vault; that's unchanged from before.
+- **SSO identity is hostname-bound** — the Entra App Registration's "Expose an API" App ID URI (`api://naga-vendors-ca.braveground-e06101b4.westeurope.azurecontainerapps.io/85bca5eb-7bf7-4dbc-b65a-87d32db793e1`), the audience `server.js` validates, and the Teams manifest (`webApplicationInfo.resource`, `validDomains`, `contentUrl`/`websiteUrl`) all have to agree on the exact same hostname. If the Container App is ever recreated (new environment, different region), all three need updating together, in the same sitting, or Teams SSO breaks.
+- **Legacy App Service** (`naga-vendors` Web App on `asp-naga-vendors`, F1) is being kept running, untouched, as a rollback path until the Container Apps hosting is confirmed stable for all users — not yet decommissioned. See §12.
+- SCM/Kudu basic-auth publishing credentials on the old Web App are disabled by default (Azure default); they were only turned on briefly, twice, to inspect deployed files, then turned back off immediately both times. Not relevant to the new Container Apps hosting (no Kudu/SCM there).
 
 ## 8. Security model — read this before adding more users
 
@@ -122,9 +124,7 @@ First attempt used Azure App Service "Easy Auth" (classic redirect-to-login). It
 ## 10. Teams app package
 
 - Location: [teams-app/manifest.json](teams-app/manifest.json), [teams-app/color.png](teams-app/color.png), [teams-app/outline.png](teams-app/outline.png), zipped as `teams-app/naga-vendors-teams-app.zip`
-- Currently sideloaded for personal use only (`scopes: ["personal"]`) — not published to the org catalog
-- To share with a colleague: send them the same zip; they sideload it themselves via Teams → Apps → Manage your apps → Upload a custom app. Works only if their account's Teams app-setup policy allows custom app uploads (same as any tenant's sideloading policy — not guaranteed identical for every user)
-- To make it available org-wide without manual zip-sharing: a Teams admin uploads the same package to the tenant's app catalog (Teams Admin Center → Teams apps → Manage apps)
+- Published to the tenant's Teams app catalog (Teams Admin Center → Teams apps → Manage apps), personal scope (`scopes: ["personal"]`) — not per-user sideloading. Updating the manifest and re-uploading the zip there (with a bumped `version`) propagates to everyone who already has the tab added, without them reinstalling anything.
 
 ## 11. Known limitations / things not built
 
@@ -137,11 +137,11 @@ First attempt used Azure App Service "Easy Auth" (classic redirect-to-login). It
 
 ## 12. Next steps (not yet done, ordered by likely priority)
 
-1. Decide on and enforce a distribution boundary for the Teams app (see §8)
-2. Move `BC_CERT_PEM` and other secrets to Azure Key Vault with a managed identity
-3. Upgrade the App Service plan from F1 to B1+ before any real usage load
-4. Set up CI/CD (GitHub Actions or Azure DevOps) instead of manual zip deploys
-5. If per-user BC permissions ever matter, revisit the auth model — app-only access can't express that today
+1. Confirm the Container Apps hosting is stable in real Teams usage (end-to-end SSO, BC calls) for all current users, then delete the old `naga-vendors` Web App and `asp-naga-vendors` plan — they're kept running only as a rollback path (see §7)
+2. Decide on and enforce a distribution boundary for the Teams app (see §8)
+3. Move `BC_CERT_PEM` and other secrets to Azure Key Vault with a managed identity
+4. If per-user BC permissions ever matter, revisit the auth model — app-only access can't express that today
+5. Watch actual Container Apps Consumption cost in Azure Cost Management for a couple of weeks to confirm it stays within the free monthly grant at real traffic
 
 ## 13. Session log — 2026-09-01
 
